@@ -93,6 +93,11 @@ class ElectoralUser(AbstractUser):
     # Security & Authentication State
     is_verified = models.BooleanField(default=False)
     passed_bimodal_auth = models.BooleanField(default=False, help_text="Facial/Fingerprint verified at BVAS")
+
+    voter_id = models.CharField(max_length=19, unique=True, blank=True, 
+        null=True, verbose_name="Voter Identification Number (VIN)")
+    
+    date_of_birth = models.DateField(blank=True, null=True)
     
     # Accessibility
     needs_assistance = models.BooleanField(default=False, help_text="Flags profile as Assisted Voter")
@@ -109,13 +114,10 @@ class ElectoralUser(AbstractUser):
 
     def save(self, *args, **kwargs):
         if self.role not in ['prospective', 'voter'] and (not self.staff_number or self.staff_number.strip() == ""):
-            role_prefix = self.role.upper()
-            while True:
-                candidate = f"STAFF-{role_prefix}-{random.randint(100000, 999999)}"
-                if not ElectoralUser.objects.filter(staff_number=candidate).exists() and not StaffInvitation.objects.filter(staff_number=candidate).exists():
-                    self.staff_number = candidate
-                    break
+            from .utils import generate_staff_id
+            self.staff_number = generate_staff_id(self.role, self.state)
         super().save(*args, **kwargs)
+
 
 
 class OTPVerification(models.Model):
@@ -195,6 +197,8 @@ class Election(models.Model):
     )
     date = models.DateField()
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='drafted')
+    start_time = models.TimeField(default='08:30:00')  # 8:30 AM
+    end_time = models.TimeField(default='14:30:00')
     eligible_states = models.JSONField(
         default=list,
         help_text="List of state names eligible to participate. Empty = nationwide."
@@ -365,12 +369,8 @@ class StaffInvitation(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.staff_number or self.staff_number.strip() == "":
-            role_prefix = self.role.upper()
-            while True:
-                candidate = f"STAFF-{role_prefix}-{random.randint(100000, 999999)}"
-                if not ElectoralUser.objects.filter(staff_number=candidate).exists() and not StaffInvitation.objects.filter(staff_number=candidate).exists():
-                    self.staff_number = candidate
-                    break
+            from .utils import generate_staff_id
+            self.staff_number = generate_staff_id(self.role, '')
         super().save(*args, **kwargs)
 
 

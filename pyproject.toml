@@ -1,0 +1,15 @@
+[project]
+name = "remotevoteng-be"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dj-database-url>=2.1.0",
+    "django>=4.2,<5.1",
+    "django-cors-headers>=4.0",
+    "djangorestframework>=3.14",
+    "psycopg2-binary>=2.9.9",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+]

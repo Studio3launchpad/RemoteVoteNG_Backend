@@ -7,6 +7,7 @@ from django.db import transaction, IntegrityError
 from django.db.models import F, Q
 from django.utils import timezone
 from django.conf import settings
+from .utils import generate_voter_id 
 from .models import (
     NIMCRecord, ElectoralUser, OTPVerification, Election, 
     Candidate, ElectionParticipation, ResultSheet, DisputeLog, AuditLog, PollingUnit,
@@ -24,6 +25,8 @@ import random
 import secrets
 
 
+from .utils import generate_voter_id  # create a utils.py file
+
 class RegisterView(views.APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -31,21 +34,40 @@ class RegisterView(views.APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             try:
+                # Verify NIN against NIMCRecord first
+                nin = request.data.get('nin') or request.data.get('username')
+                try:
+                    NIMCRecord.objects.get(nin=nin)
+                except NIMCRecord.DoesNotExist:
+                    return Response(
+                        {"error": "NIN not found in NIMC database. Please check your NIN and try again."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Create user
                 user = serializer.save()
+
+                # Generate and save Voter ID
+                vin = generate_voter_id(user.state)
+                user.voter_id = vin
+                user.save()
+
+                # Send OTP
                 otp = OTPVerification.generate_otp(user, 'signup')
                 email_sent = send_otp_email(user, otp.code, 'signup')
+
                 return Response({
-                    "message": "Registration successful. Verification email sent.",
-                    "nin": user.username,
+                    "message": "Registration successful. Check your email for your Voter ID and OTP.",
+                    "voter_id": vin,
                     "email": user.email,
                     "full_name": user.full_name,
                     "email_sent": email_sent,
                     "otp_code_preview": otp.code if settings.BREVO_API_KEY in [None, 'mock', ''] else None
                 }, status=status.HTTP_201_CREATED)
+
             except Exception as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class VerifyOTPView(views.APIView):
     permission_classes = [permissions.AllowAny]
@@ -86,20 +108,53 @@ class VerifyOTPView(views.APIView):
                 "nin": nin, "code": code
             }, status=status.HTTP_200_OK)
 
-
 class LoginView(views.APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        identifier = request.data.get('nin') or request.data.get('username') or request.data.get('staff_number')
+        voter_id = request.data.get('voter_id')
+        staff_id = request.data.get('staff_id')
         password = request.data.get('password')
 
-        if not identifier or not password:
-            return Response({"error": "Login ID and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not password:
+            return Response(
+                {"error": "Password is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        user = authenticate(username=identifier, password=password)
+        # Determine login identifier
+        if voter_id:
+            try:
+                user_obj = ElectoralUser.objects.get(voter_id=voter_id)
+            except ElectoralUser.DoesNotExist:
+                return Response(
+                    {"error": "Invalid Voter ID or password."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            user = authenticate(username=user_obj.username, password=password)
+
+        elif staff_id:
+            # Staff login with staff number
+            try:
+                user_obj = ElectoralUser.objects.get(staff_number=staff_id)
+            except ElectoralUser.DoesNotExist:
+                return Response(
+                    {"error": "Invalid Staff ID or password."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            user = authenticate(username=user_obj.username, password=password)
+
+        else:
+            return Response(
+                {"error": "Voter ID or Staff Number is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         if not user:
-            return Response({"error": "Invalid login credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"error": "Invalid credentials."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
         if not user.is_verified and user.role in ['voter', 'prospective']:
             otp = OTPVerification.generate_otp(user, 'signup')
@@ -107,14 +162,17 @@ class LoginView(views.APIView):
             return Response({
                 "error": "Account not verified.",
                 "code": "unverified",
-                "nin": user.username,
                 "email": user.email,
                 "message": "A new verification code has been sent to your email."
             }, status=status.HTTP_403_FORBIDDEN)
 
         token, _ = Token.objects.get_or_create(user=user)
-        return Response({"token": token.key, "voter": ElectoralUserSerializer(user).data}, status=status.HTTP_200_OK)
 
+        user_data_key = "voter" if user.role in ['voter', 'prospective'] else "staff"
+        return Response({
+            "token": token.key,
+            user_data_key: ElectoralUserSerializer(user).data
+        }, status=status.HTTP_200_OK)
 
 class ForgotPasswordView(views.APIView):
     permission_classes = [permissions.AllowAny]
@@ -208,10 +266,42 @@ class CastVoteView(views.APIView):
         candidate_id = request.data.get('candidate_id')
 
         if not election_id or not candidate_id:
-            return Response({"error": "Election ID and Candidate ID are required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Election ID and Candidate ID are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         election = get_object_or_404(Election, id=election_id)
         candidate = get_object_or_404(Candidate, id=candidate_id, election=election)
+
+        # Date and time validation
+        now = timezone.now()
+        today = now.date()
+        current_time = now.time()
+
+        if today < election.date:
+            return Response(
+                {"error": f"Voting has not started yet. Election is scheduled for {election.date}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if today > election.date:
+            return Response(
+                {"error": f"Voting has closed. This election was held on {election.date}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if current_time < election.start_time:
+            return Response(
+                {"error": f"Polls have not opened yet. Voting starts at {election.start_time.strftime('%I:%M %p')}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if current_time > election.end_time:
+            return Response(
+                {"error": f"Polls are closed. Voting ended at {election.end_time.strftime('%I:%M %p')}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if not election.can_accept_votes:
             return Response(
@@ -224,12 +314,19 @@ class CastVoteView(views.APIView):
                 ElectionParticipation.objects.create(voter=request.user, election=election)
                 Candidate.objects.filter(id=candidate_id).update(votes_count=F('votes_count') + 1)
         except IntegrityError:
-            return Response({"error": "You have already cast a ballot in this election."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "You have already cast a ballot in this election."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
         out = "".join(random.choice(chars) for _ in range(12))
         receipt = f"RVNG-{out[:4]}-{out[4:8]}-{out[8:]}"
-        return Response({"message": "Ballot cast successfully.", "receipt": receipt}, status=status.HTTP_200_OK)
+        return Response({
+            "message": "Ballot cast successfully.",
+            "receipt": receipt
+        }, status=status.HTTP_200_OK)
+
 
 
 # --- STAFF ROLE-BASED ACCESS VIEWS ---
@@ -561,9 +658,20 @@ class SendStaffInvitationView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        if request.user.role not in ['commissioner', 'secretary']:
-            return Response({"error": "Only INEC Electoral Commissioners or Secretaries can send staff invitations."}, status=status.HTTP_403_FORBIDDEN)
+        role = request.data.get('role') if not isinstance(request.data, list) else None
 
+    # Only secretary can invite commissioners
+        if role == 'commissioner' and request.user.role != 'secretary':
+            return Response(
+                {"error": "Only the INEC Secretary can invite Commissioners."},
+                   status=status.HTTP_403_FORBIDDEN
+           )
+
+        if request.user.role not in ['commissioner', 'secretary']:
+            return Response(
+                {"error": "Only INEC Secretary or Commissioners can send staff invitations."},
+                   status=status.HTTP_403_FORBIDDEN
+            )
         is_many = isinstance(request.data, list)
         items = request.data if is_many else [request.data]
         
@@ -747,7 +855,7 @@ class AcceptStaffInvitationView(views.APIView):
         return Response({
             "message": f"Account activated successfully. Welcome, {user.full_name}.",
             "token": token_obj.key,
-            "voter": ElectoralUserSerializer(user).data
+            "staff": ElectoralUserSerializer(user).data  # ← change voter to staff
         }, status=status.HTTP_201_CREATED)
 
 
@@ -911,7 +1019,11 @@ class ElectionCreateView(views.APIView):
             return err
 
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
-        data['eligible_states'] = [request.user.state]
+        NATIONWIDE_ELECTIONS = ['presidential', 'house_reps']
+        if data.get('election_type') in NATIONWIDE_ELECTIONS:
+            data['eligible_states'] = []  # empty = nationwide
+        else:
+            data['eligible_states'] = [request.user.state]
 
         serializer = ElectionCreateSerializer(data=data, context={'request': request})
         if serializer.is_valid():
@@ -1154,3 +1266,41 @@ class SecretaryMetricsView(views.APIView):
             "total_invitations": total_invitations,
             "total_accreditations": total_accreditations
         }, status=status.HTTP_200_OK)
+
+class NINVerifyView(views.APIView):
+    """
+    Standalone Mock NIMC NIN Verification endpoint.
+    Checks submitted NIN against the simulated NIMC database.
+    KAN-18
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        nin = request.data.get('nin')
+
+        if not nin:
+            return Response(
+                {'verified': False, 'message': 'NIN is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not nin.isdigit() or len(nin) != 11:
+            return Response(
+                {'verified': False, 'message': 'NIN must be exactly 11 digits'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            record = NIMCRecord.objects.get(nin=nin)
+            return Response({
+                'verified': True,
+                'full_name': record.full_name,
+                'state': record.state,
+                'lga': record.lga,
+            }, status=status.HTTP_200_OK)
+
+        except NIMCRecord.DoesNotExist:
+            return Response(
+                {'verified': False, 'message': 'NIN not found in NIMC database'},
+                status=status.HTTP_404_NOT_FOUND
+            )

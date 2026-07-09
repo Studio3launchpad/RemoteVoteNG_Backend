@@ -295,16 +295,15 @@ class ProfileView(views.APIView):
         return Response({"error": "No update fields provided."}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ElectionListView(views.APIView):
+class ElectionListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ElectionSerializer
 
-    def get(self, request):
+    def get_queryset(self):
         # Drafted elections are internal — hidden from voters, field staff, and public viewers.
         # Only commissioners and auditors can see all elections via /commissioner/elections/
         public_statuses = ['upcoming', 'active', 'collation', 'closed']
-        elections = Election.objects.filter(status__in=public_statuses).prefetch_related('candidates')
-        serializer = ElectionSerializer(elections, many=True, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Election.objects.filter(status__in=public_statuses).prefetch_related('candidates')
 
 
 class ElectionDetailView(views.APIView):
@@ -1267,30 +1266,30 @@ class CandidateDeleteView(views.APIView):
         return Response({"message": f"Candidate '{name}' removed from '{election.title}'."}, status=status.HTTP_200_OK)
 
 
-class CommissionerElectionListView(views.APIView):
+class CommissionerElectionListView(generics.ListAPIView):
     """
     Returns ALL elections (including drafts) visible only to commissioners, secretaries, and auditors.
     Regular voters only see upcoming/active/closed elections via ElectionListView.
     """
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ElectionSerializer
 
-    def get(self, request):
-        if request.user.role not in ['commissioner', 'auditor', 'secretary']:
-            return Response({"error": "Access restricted."}, status=status.HTTP_403_FORBIDDEN)
+    def get_queryset(self):
+        if self.request.user.role not in ['commissioner', 'auditor', 'secretary']:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Access restricted.")
 
         elections = Election.objects.prefetch_related('candidates', 'closure_approvals').all()
         
         # Filter by state for commissioner
-        if request.user.role == 'commissioner':
+        if self.request.user.role == 'commissioner':
             filtered_elections = []
             for e in elections:
-                if not e.eligible_states or request.user.state in e.eligible_states:
+                if not e.eligible_states or self.request.user.state in e.eligible_states:
                     filtered_elections.append(e)
-            elections = filtered_elections
+            return filtered_elections
 
-        return Response(
-            ElectionSerializer(elections, many=True, context={'request': request}).data
-        )
+        return elections
 
 
 class SecretaryMetricsView(views.APIView):

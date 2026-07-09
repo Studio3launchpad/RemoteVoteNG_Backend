@@ -11,14 +11,14 @@ from .utils import generate_voter_id
 from .models import (
     NIMCRecord, ElectoralUser, OTPVerification, Election, 
     Candidate, ElectionParticipation, ResultSheet, DisputeLog, AuditLog, PollingUnit,
-    StaffInvitation, AccreditationApplication, ElectionClosureApproval
+    StaffInvitation, AccreditationApplication, ElectionClosureApproval, VoterRegistrationRecord
 )
 from .serializers import (
     RegisterSerializer, ElectoralUserSerializer, ElectionSerializer, 
     CandidateSerializer, ResultSheetSerializer, DisputeLogSerializer, AuditLogSerializer,
     StaffInvitationSerializer, AccreditationApplicationSerializer, ElectionClosureApprovalSerializer,
     ElectionCreateSerializer, ElectionUpdateSerializer, CandidateCreateSerializer, PollingUnitSerializer,
-    NIMCRecordSerializer
+    NIMCRecordSerializer, VoterRegistrationRecordSerializer
 )
 from .brevo import send_otp_email
 import random
@@ -34,40 +34,88 @@ class RegisterView(views.APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             try:
-                # Verify NIN against NIMCRecord first
-                # nin = request.data.get('nin') or request.data.get('username')
-                # try:
-                #     NIMCRecord.objects.get(nin=nin)
-                # except NIMCRecord.DoesNotExist:
-                #     return Response(
-                #         {"error": "NIN not found in NIMC database. Please check your NIN and try again."},
-                #         status=status.HTTP_400_BAD_REQUEST
-                #     )
-
-                # Create user
+                # Serializer validates VRN + NIN cross-match and creates the user
                 user = serializer.save()
 
-                # Generate and save Voter ID
+                # Generate and save Voter ID (VIN) for the newly registered voter
                 vin = generate_voter_id(user.state)
                 user.voter_id = vin
-                user.save()
+                user.save(update_fields=['voter_id'])
 
-                # Send OTP
-                otp = OTPVerification.generate_otp(user, 'signup')
-                email_sent = send_otp_email(user, otp.code, 'signup')
-
+                # No email collected — account is already verified, return token immediately
+                token, _ = Token.objects.get_or_create(user=user)
                 return Response({
-                    "message": "Registration successful. Check your email for your Voter ID and OTP.",
+                    "message": "Registration successful. Your Voter ID (VIN) has been generated. Keep it safe — it is your login credential.",
                     "voter_id": vin,
-                    "email": user.email,
                     "full_name": user.full_name,
-                    "email_sent": email_sent,
-                    "otp_code_preview": otp.code if settings.BREVO_API_KEY in [None, 'mock', ''] else None
+                    "state": user.state,
+                    "lga": user.lga,
+                    "requires_otp": False,
+                    "token": token.key,
+                    "voter": ElectoralUserSerializer(user).data,
                 }, status=status.HTTP_201_CREATED)
 
             except Exception as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class VoterRegisterLookupView(views.APIView):
+    """
+    Pre-signup lookup — allows the frontend to verify that a VRN + NIN
+    pair exists in the voter register before the user fills out the full form.
+    Returns the voter's name, state and LGA (no sensitive data) if found.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        nin = request.data.get('nin', '').strip()
+        vrn = request.data.get('vrn', '').strip().upper()
+
+        if not nin or not vrn:
+            return Response({"error": "Both NIN and VRN are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            record = VoterRegistrationRecord.objects.get(vrn=vrn)
+        except VoterRegistrationRecord.DoesNotExist:
+            return Response({"error": "VRN not found in the INEC voter register."}, status=status.HTTP_404_NOT_FOUND)
+
+        if record.nin != nin:
+            return Response({"error": "VRN and NIN do not match."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if record.is_claimed:
+            return Response({"error": "This VRN has already been used to create an account."}, status=status.HTTP_409_CONFLICT)
+
+        return Response({
+            "found": True,
+            "full_name": record.full_name,
+            "state": record.state,
+            "lga": record.lga,
+            "ward": record.ward,
+            "polling_unit_code": record.polling_unit_code,
+        }, status=status.HTTP_200_OK)
+
+
+class VoterRegistrationRecordListView(generics.ListAPIView):
+    """
+    Read-only list of voter registration records for secretary / commissioner review.
+    """
+    serializer_class = VoterRegistrationRecordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role not in ['secretary', 'commissioner', 'auditor']:
+            return VoterRegistrationRecord.objects.none()
+        qs = VoterRegistrationRecord.objects.all().order_by('-id')
+        state = self.request.query_params.get('state')
+        is_claimed = self.request.query_params.get('is_claimed')
+        if state:
+            qs = qs.filter(state=state)
+        if is_claimed is not None:
+            qs = qs.filter(is_claimed=is_claimed.lower() == 'true')
+        return qs
 
 class VerifyOTPView(views.APIView):
     permission_classes = [permissions.AllowAny]
@@ -144,9 +192,19 @@ class LoginView(views.APIView):
                 )
             user = authenticate(username=user_obj.username, password=password)
 
+        elif request.data.get('nin'):
+            # NIN direct login (fallback — works for staff whose username is their NIN)
+            nin = request.data.get('nin')
+            user = authenticate(username=nin, password=password)
+            if not user:
+                return Response(
+                    {"error": "Invalid NIN or password."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+
         else:
             return Response(
-                {"error": "Voter ID or Staff Number is required."},
+                {"error": "Voter ID, Staff Number, or NIN is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

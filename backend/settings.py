@@ -24,6 +24,7 @@ ALLOWED_HOSTS = ['*']
 # Application definition
 
 INSTALLED_APPS = [
+    'unfold',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -35,6 +36,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
+    'cloudinary_storage',
+    'cloudinary',
     
     # Local apps
     'api.apps.ApiConfig',
@@ -136,6 +139,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
+MEDIA_URL = '/media/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -191,4 +195,18 @@ SECRETARY_NAME = os.getenv("SECRETARY_NAME", "INEC Secretary HQ")
 SECRETARY_STATE = os.getenv("SECRETARY_STATE", "FCT")
 SECRETARY_LGA = os.getenv("SECRETARY_LGA", "Abuja Municipal")
 
+# Cloudinary Storage Configuration
+STORAGES = {
+    "default": {
+        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': os.getenv("CLOUDINARY_CLOUD_NAME", ""),
+    'API_KEY': os.getenv("CLOUDINARY_API_KEY", ""),
+    'API_SECRET': os.getenv("CLOUDINARY_API_SECRET", "")
+}

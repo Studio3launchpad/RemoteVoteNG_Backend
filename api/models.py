@@ -24,6 +24,46 @@ class NIMCRecord(models.Model):
         verbose_name_plural = "NIMC Records"
 
 
+class VoterRegistrationRecord(models.Model):
+    """
+    INEC's official Voter Register (CVR — Continuous Voter Registration).
+    Pre-populated by INEC before elections. Each row represents a citizen
+    who has completed their physical registration at a registration centre.
+    Voters must supply a matching (VRN + NIN) pair to complete online signup.
+    """
+    vrn = models.CharField(
+        max_length=20, unique=True,
+        verbose_name="Voter Registration Number",
+        help_text="Alphanumeric VRN printed on the back of the PVC (Permanent Voter Card)"
+    )
+    nin = models.CharField(max_length=11, verbose_name="NIN", db_index=True)
+    full_name = models.CharField(max_length=150)
+    date_of_birth = models.DateField()
+    gender = models.CharField(max_length=6, choices=[('M', 'Male'), ('F', 'Female')])
+    state = models.CharField(max_length=100)
+    lga = models.CharField(max_length=100)
+    ward = models.CharField(max_length=100, blank=True)
+    polling_unit_code = models.CharField(
+        max_length=50, blank=True,
+        help_text="Code of the polling unit where voter physically registered"
+    )
+    is_claimed = models.BooleanField(
+        default=False,
+        help_text="Set to True when voter completes online account creation"
+    )
+    claimed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.full_name} — VRN: {self.vrn}"
+
+    class Meta:
+        verbose_name = "Voter Registration Record"
+        verbose_name_plural = "Voter Registration Records"
+        indexes = [
+            models.Index(fields=['vrn', 'nin']),
+        ]
+
+
 class PollingUnit(models.Model):
     """
     Geographic edge-node for the electoral network.
@@ -81,36 +121,39 @@ class ElectoralUser(AbstractUser):
     username = models.CharField(max_length=11, unique=True, verbose_name="NIN")
     staff_number = models.CharField(max_length=50, unique=True, blank=True, null=True, verbose_name="Staff Number")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='prospective')
-    
+
     # Demographics & Placement
+    full_name = models.CharField(max_length=150, blank=True, default='')
+    state = models.CharField(max_length=100, blank=True, default='')
+    lga = models.CharField(max_length=100, blank=True, default='', verbose_name="LGA")
     assigned_polling_unit = models.ForeignKey(PollingUnit, on_delete=models.SET_NULL, null=True, blank=True)
-    
+
     # Security & Authentication State
     is_verified = models.BooleanField(default=True)
     passed_bimodal_auth = models.BooleanField(default=True, help_text="Facial/Fingerprint verified at BVAS")
 
-    voter_id = models.CharField(max_length=19, unique=True, blank=True, 
+    voter_id = models.CharField(max_length=19, unique=True, blank=True,
         null=True, verbose_name="Voter Identification Number (VIN)")
-    
+
     date_of_birth = models.DateField(blank=True, null=True)
-    
+
     # Accessibility
     needs_assistance = models.BooleanField(default=False, help_text="Flags profile as Assisted Voter")
     ui_configuration = models.JSONField(default=dict, help_text="Stores TTS or high-contrast preferences")
     language = models.CharField(max_length=50, default='English', help_text="Preferred interface/voice language")
 
-    email = models.EmailField(unique=True)
+    email = models.EmailField(unique=True, blank=True, null=True)
 
     USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = ['email' ]
+    REQUIRED_FIELDS = []
 
     def __str__(self):
-        return f"({self.get_role_display()})"
+        return f"{self.full_name or self.username} ({self.get_role_display()})"
 
     def save(self, *args, **kwargs):
-        if self.role not in ['prospective', 'voter'] and (not self.staff_number or self.staff_number.strip() == ""):
+        if self.role not in ['prospective', 'voter'] and (not self.staff_number or self.staff_number.strip() == ''):
             from .utils import generate_staff_id
-            self.staff_number = generate_staff_id(self.role, self.state)
+            self.staff_number = generate_staff_id(self.role, self.state or 'FCT')
         super().save(*args, **kwargs)
 
 
@@ -226,6 +269,7 @@ class Candidate(models.Model):
     party = models.CharField(max_length=150)
     party_abbr = models.CharField(max_length=20)
     color = models.CharField(max_length=10, default="#1565c0")
+    party_logo = models.ImageField(upload_to='party_logos/', blank=True, null=True)
     manifesto = models.TextField()
     running_mate = models.CharField(max_length=150, blank=True, null=True)
     votes_count = models.PositiveIntegerField(default=0)

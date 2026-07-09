@@ -90,5 +90,5 @@ def generate_staff_id(role, state):
     while True:
         number = str(random.randint(100000, 999999))
         staff_id = f"INEC/{state_code}/{role_code}/{year}/{number}"
-        if not ElectoralUser.objects.filter(staff_number=staff_id).exists():
+        if not ElectoralUser.objects.filter(staff_id=staff_id).exists():
             return staff_id

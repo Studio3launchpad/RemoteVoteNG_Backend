@@ -80,7 +80,7 @@ class ElectoralUser(AbstractUser):
     ]
 
     username = models.CharField(max_length=11, unique=True, verbose_name="NIN")
-    staff_number = models.CharField(max_length=50, unique=True, blank=True, null=True, verbose_name="Staff Number")
+    staff_number = models.CharField(max_length=50, unique=True, blank=True, null=True, verbose_name="Staff ID")
     vnin = models.CharField(max_length=16, blank=True, null=True, verbose_name="Virtual NIN")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='prospective')
     
@@ -335,7 +335,7 @@ class StaffInvitation(models.Model):
 
     token = models.CharField(max_length=64, unique=True)
     invited_email = models.EmailField()
-    staff_number = models.CharField(max_length=50, unique=True)
+    staff_id = models.CharField(max_length=50, unique=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     assigned_polling_unit = models.ForeignKey(PollingUnit, on_delete=models.SET_NULL, null=True, blank=True)
     invited_by = models.ForeignKey(
@@ -347,13 +347,13 @@ class StaffInvitation(models.Model):
     expires_at = models.DateTimeField()
 
     @classmethod
-    def create_invitation(cls, email, staff_number, role, invited_by, polling_unit=None):
+    def create_invitation(cls, email, staff_id, role, invited_by, polling_unit=None):
         import secrets
         token = secrets.token_urlsafe(32)
         return cls.objects.create(
             token=token,
             invited_email=email,
-            staff_number=staff_number,
+            staff_id=staff_id,
             role=role,
             assigned_polling_unit=polling_unit,
             invited_by=invited_by,
@@ -368,9 +368,9 @@ class StaffInvitation(models.Model):
         return f"Invitation for {self.invited_email} ({self.role}) - {'Used' if self.is_used else 'Pending'}"
 
     def save(self, *args, **kwargs):
-        if not self.staff_number or self.staff_number.strip() == "":
+        if not self.staff_id or self.staff_id.strip() == "":
             from .utils import generate_staff_id
-            self.staff_number = generate_staff_id(self.role, '')
+            self.staff_id = generate_staff_id(self.role, '')
         super().save(*args, **kwargs)
 
 

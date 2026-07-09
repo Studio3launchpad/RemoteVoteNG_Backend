@@ -42,7 +42,7 @@ class ElectoralUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = ElectoralUser
         fields = [
-            'username', 'staff_number', 'full_name', 'email', 
+            'username', 'staff_id', 'full_name', 'email', 
             'state', 'lga', 'role', 'is_verified', 'language'
         ]
         extra_kwargs = {
@@ -281,7 +281,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     def get_username(self, obj):
         if obj.user:
-            return obj.user.staff_number if obj.user.staff_number else obj.user.username
+            return obj.user.staff_id if obj.user.staff_id else obj.user.username
         return "System"
 
 
@@ -293,7 +293,7 @@ class StaffInvitationSerializer(serializers.ModelSerializer):
     class Meta:
         model = StaffInvitation
         fields = [
-            'id', 'token', 'invited_email', 'staff_number', 'role',
+            'id', 'token', 'invited_email', 'staff_id', 'role',
             'assigned_polling_unit', 'polling_unit_name', 'invited_by',
             'invited_by_name', 'is_used', 'is_valid', 'created_at', 'expires_at'
         ]
@@ -313,7 +313,7 @@ class AccreditationApplicationSerializer(serializers.ModelSerializer):
 
 class ElectionClosureApprovalSerializer(serializers.ModelSerializer):
     approved_by_name = serializers.CharField(source='approved_by.full_name', read_only=True)
-    approved_by_staff = serializers.CharField(source='approved_by.staff_number', read_only=True)
+    approved_by_staff = serializers.CharField(source='approved_by.staff_id', read_only=True)
 
     class Meta:
         model = ElectionClosureApproval

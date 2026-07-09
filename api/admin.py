@@ -7,11 +7,11 @@ from .models import (
     StaffInvitation, AccreditationApplication, ElectionClosureApproval
 )
 
-# Custom Admin Login Form to use Staff Number label
+# Custom Admin Login Form to use Staff ID label
 class StaffAdminAuthenticationForm(AdminAuthenticationForm):
     username = forms.CharField(
-        label="Staff Number / NIN", 
-        help_text="Login using your Staff Number (for election officials) or NIN.",
+        label="Staff ID / NIN", 
+        help_text="Login using your Staff ID (for election officials) or NIN.",
         widget=forms.TextInput(attrs={'autofocus': True, 'placeholder': 'e.g., STAFF-PO or 11111111111'})
     )
 
@@ -26,7 +26,7 @@ admin.site.index_title = "Control Panel & Audit Dashboard"
 class ElectoralUserAdmin(admin.ModelAdmin):
     list_display = ['username', 'staff_number', 'full_name', 'email', 'role', 'is_verified', 'is_staff']
     list_filter = ['role', 'is_verified', 'is_staff', 'state']
-    search_fields = ['username', 'staff_number', 'full_name', 'email']
+    search_fields = ['username', 'staff_id', 'full_name', 'email']
     ordering = ['role', 'username']
 
 
@@ -86,7 +86,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     """
     list_display = ['user', 'action', 'model_name', 'object_id', 'timestamp', 'ip_address']
     list_filter = ['action', 'model_name', 'timestamp']
-    search_fields = ['user__username', 'user__staff_number', 'model_name', 'object_id', 'details']
+    search_fields = ['user__username', 'user__staffid', 'model_name', 'object_id', 'details']
     
     def has_add_permission(self, request):
         return False
@@ -100,9 +100,9 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 @admin.register(StaffInvitation)
 class StaffInvitationAdmin(admin.ModelAdmin):
-    list_display = ['staff_number', 'invited_email', 'role', 'invited_by', 'is_used', 'created_at', 'expires_at']
+    list_display = ['staff_id', 'invited_email', 'role', 'invited_by', 'is_used', 'created_at', 'expires_at']
     list_filter = ['role', 'is_used', 'created_at']
-    search_fields = ['staff_number', 'invited_email', 'token']
+    search_fields = ['staff_id', 'invited_email', 'token']
     readonly_fields = ['token', 'created_at']
 
     def has_change_permission(self, request, obj=None):
@@ -122,7 +122,7 @@ class AccreditationApplicationAdmin(admin.ModelAdmin):
 class ElectionClosureApprovalAdmin(admin.ModelAdmin):
     list_display = ['election', 'approved_by', 'approved_at', 'digital_signature']
     list_filter = ['election', 'approved_at']
-    search_fields = ['approved_by__full_name', 'approved_by__staff_number', 'digital_signature']
+    search_fields = ['approved_by__full_name', 'approved_by__staffid', 'digital_signature']
     readonly_fields = ['approved_at', 'digital_signature']
 
     def has_add_permission(self, request):

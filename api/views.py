@@ -136,7 +136,7 @@ class LoginView(views.APIView):
         elif staff_id:
             # Staff login with staff number
             try:
-                user_obj = ElectoralUser.objects.get(staff_number=staff_id)
+                user_obj = ElectoralUser.objects.get(staff_id=staff_id)
             except ElectoralUser.DoesNotExist:
                 return Response(
                     {"error": "Invalid Staff ID or password."},
@@ -146,7 +146,7 @@ class LoginView(views.APIView):
 
         else:
             return Response(
-                {"error": "Voter ID or Staff Number is required."},
+                {"error": "Voter ID or Staff ID is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -408,7 +408,7 @@ class ApproveElectionClosureView(views.APIView):
             return Response({"error": "You have already submitted your closure approval for this election."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Generate digital signature
-        digital_sig = f"SIG-{request.user.staff_number}-{election.id}-{secrets.token_hex(8).upper()}"
+        digital_sig = f"SIG-{request.user.staff_id}-{election.id}-{secrets.token_hex(8).upper()}"
 
         # Record this RO's approval
         approval = ElectionClosureApproval.objects.create(
@@ -638,7 +638,7 @@ class ResendStaffInvitationView(views.APIView):
         send_staff_invitation_email(
             email=invitation.invited_email,
             role_display=invitation.get_role_display(),
-            staff_number=invitation.staff_number,
+            staff_id=invitation.staff_id,
             token=invitation.token
         )
         return Response({"message": f"Invitation email resent successfully to {invitation.invited_email}."}, status=status.HTTP_200_OK)
@@ -697,9 +697,9 @@ class SendStaffInvitationView(views.APIView):
 
                     # Autogenerate staff number
                     role_prefix = role.upper()
-                    staff_number = f"STAFF-{role_prefix}-{random.randint(100000, 999999)}"
-                    while ElectoralUser.objects.filter(staff_number=staff_number).exists() or StaffInvitation.objects.filter(staff_number=staff_number).exists():
-                        staff_number = f"STAFF-{role_prefix}-{random.randint(100000, 999999)}"
+                    staff_id = f"STAFF-{role_prefix}-{random.randint(100000, 999999)}"
+                    while ElectoralUser.objects.filter(staff_id=staff_id).exists() or StaffInvitation.objects.filter(staff_id=staff_id).exists():
+                        staff_id = f"STAFF-{role_prefix}-{random.randint(100000, 999999)}"
 
                     polling_unit = None
                     if polling_unit_id:
@@ -714,7 +714,7 @@ class SendStaffInvitationView(views.APIView):
                     invitation = StaffInvitation.create_invitation(
                         email=email,
                         role=role,
-                        staff_number=staff_number,
+                        staff_id=staff_id,
                         invited_by=request.user,
                         polling_unit=polling_unit
                     )
@@ -725,7 +725,7 @@ class SendStaffInvitationView(views.APIView):
                         send_staff_invitation_email(
                             email=invitation.invited_email,
                             role_display=invitation.get_role_display(),
-                            staff_number=invitation.staff_number,
+                            staff_id=invitation.staff_id,
                             token=invitation.token
                         )
                     except Exception as e:
@@ -737,7 +737,7 @@ class SendStaffInvitationView(views.APIView):
                     results.append({
                         "email": invitation.invited_email,
                         "role": invitation.role,
-                        "staff_number": invitation.staff_number,
+                        "staff_id": invitation.staff_id,
                         "invitation_token": invitation.token,
                         "activation_link": activation_link,
                         "expires_at": invitation.expires_at
@@ -796,7 +796,7 @@ class AcceptStaffInvitationView(views.APIView):
             return Response({"error": "This invitation link has expired or has already been used."}, status=status.HTTP_410_GONE)
         return Response({
             "email": invitation.invited_email,
-            "staff_number": invitation.staff_number,
+            "staff_id": invitation.staff_id,
             "role": invitation.role,
             "role_display": invitation.get_role_display(),
             "expires_at": invitation.expires_at
@@ -840,7 +840,7 @@ class AcceptStaffInvitationView(views.APIView):
             state=nimc.state,
             lga=nimc.lga,
             role=invitation.role,
-            staff_number=invitation.staff_number,
+            staff_id=invitation.staff_id,
             assigned_polling_unit=invitation.assigned_polling_unit,
             is_verified=True,
             is_staff=True
@@ -978,7 +978,7 @@ class ReviewAccreditationView(views.APIView):
                 return Response({
                     "message": f"Application APPROVED. Accreditation invitation sent to {app.contact_email}.",
                     "activation_link": activation_link,
-                    "staff_number": invitation.staff_number,
+                    "staff_id": invitation.staff_id,
                     "role": invitation.role
                 }, status=status.HTTP_200_OK)
             except StaffInvitation.DoesNotExist:

@@ -64,7 +64,7 @@ backend/
 │   ├── migrations/                 # Django migrations
 │   │   └── 0005_provision_secretary.py  # Auto-provisions INEC Secretary account
 │   ├── admin.py                    # Django admin configuration
-│   ├── auth_backend.py             # Custom NIN/Staff Number auth backend
+│   ├── auth_backend.py             # Custom NIN/Staff ID auth backend
 │   ├── brevo.py                    # Brevo transactional email helpers
 │   ├── middleware.py               # Thread-local request user capture (for audit logs)
 │   ├── models.py                   # All data models
@@ -110,7 +110,7 @@ backend/
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/api/auth/signup/` | Register a new voter (NIN + NIMC verification) |
-| `POST` | `/api/auth/login/` | Login with NIN or Staff Number + password |
+| `POST` | `/api/auth/login/` | Login with NIN or Staff ID + password |
 | `POST` | `/api/auth/verify-otp/` | Verify OTP for MFA flows |
 | `POST` | `/api/auth/request-otp/` | Request a new OTP |
 | `POST` | `/api/auth/reset-password/` | Password reset |
@@ -173,7 +173,7 @@ Tokens are returned on successful login via `/api/auth/login/`.
 
 The custom auth backend (`auth_backend.py`) supports login with either:
 - **NIN** (National Identification Number) — for voters
-- **Staff Number** — for INEC staff
+- **Staff ID** — for INEC staff
 
 ---
 
@@ -191,7 +191,7 @@ DATABASE_URL=
 
 # INEC Secretary Default Account (provisioned on first migration)
 SECRETARY_NIN=99999999999
-SECRETARY_STAFF_NUMBER=STAFF-SECRETARY-2026
+SECRETARY_STAFFID=STAFF-SECRETARY-2026
 SECRETARY_DEFAULT_PASSWORD=SecPass2026!
 SECRETARY_EMAIL=secretary@remotevoteng.org
 SECRETARY_NAME=INEC Secretary HQ
@@ -205,6 +205,54 @@ BREVO_SENDER_NAME=RemoteVote NG
 
 # Frontend URL (for email links)
 FRONTEND_URL=http://localhost:3000
+
+---
+
+## Frontend Integration
+
+- **API base path:** `/api/` (example local backend: `http://localhost:8000/api/`).
+- **Auth flow / endpoints:**
+	- Register: `POST /api/auth/register/` (send NIN and user details)
+	- Verify OTP: `POST /api/auth/verify-otp/` (NIN + code)
+	- Login: `POST /api/auth/login/` (voter_id or staff_id + password)
+		- Note: For staff, the frontend must send the field name `staff_id` containing the staff number (e.g. `STAFF-PO-001`). Do NOT send `staffid` or other variants — the backend expects `staff_id`.
+	- Forgot password: `POST /api/auth/forgot-password/` (NIN)
+	- Reset password: `POST /api/auth/reset-password/` (NIN + code + new password)
+	- Profile: `GET /api/auth/profile/` (authenticated)
+- **Auth header:** Include token on protected requests:
+
+```http
+Authorization: Token <your_auth_token>
+```
+
+- **Activation links:** The backend uses `FRONTEND_URL` to compose invitation/activation
+	links, e.g. `${FRONTEND_URL}/onboard?token=<token>`; ensure the frontend route
+	`/onboard` reads `token` from query parameters and calls the accept endpoint.
+
+- **CORS:** Development allows all origins (`CORS_ALLOW_ALL_ORIGINS=True`). For
+	production, set explicit allowed origins matching the deployed frontend.
+
+- **Error handling:** Login may return `code: "unverified"` when OTP verification
+	is required — present the OTP entry UI and call `POST /api/auth/verify-otp/`.
+
+- **Example login (fetch):**
+
+```javascript
+fetch('http://localhost:8000/api/auth/login/', {
+	method: 'POST',
+	headers: { 'Content-Type': 'application/json' },
+	// Voter login example
+	// body: JSON.stringify({ voter_id: 'VOTER-XXXX', password: 'pass' })
+	// Staff login example (use staff_id):
+	body: JSON.stringify({ staff_id: 'STAFF-PO-001', password: 'Password2026!' })
+})
+.then(r => r.json())
+.then(data => console.log(data))
+```
+
+- **Frontend env:** The frontend only needs to know its own public `FRONTEND_URL`
+	(used server-side to generate links) and the backend base URL during development.
+
 ```
 
 ---

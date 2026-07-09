@@ -35,14 +35,14 @@ class RegisterView(views.APIView):
         if serializer.is_valid():
             try:
                 # Verify NIN against NIMCRecord first
-                nin = request.data.get('nin') or request.data.get('username')
-                try:
-                    NIMCRecord.objects.get(nin=nin)
-                except NIMCRecord.DoesNotExist:
-                    return Response(
-                        {"error": "NIN not found in NIMC database. Please check your NIN and try again."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+                # nin = request.data.get('nin') or request.data.get('username')
+                # try:
+                #     NIMCRecord.objects.get(nin=nin)
+                # except NIMCRecord.DoesNotExist:
+                #     return Response(
+                #         {"error": "NIN not found in NIMC database. Please check your NIN and try again."},
+                #         status=status.HTTP_400_BAD_REQUEST
+                #     )
 
                 # Create user
                 user = serializer.save()
@@ -826,10 +826,10 @@ class AcceptStaffInvitationView(views.APIView):
             return Response({"error": "An account with this NIN already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Verify NIN against NIMC
-        try:
-            nimc = NIMCRecord.objects.get(nin=nin)
-        except NIMCRecord.DoesNotExist:
-            return Response({"error": "NIN not found in the National Identity Database. Contact INEC ICT support."}, status=status.HTTP_400_BAD_REQUEST)
+        # try:
+        #     nimc = NIMCRecord.objects.get(nin=nin)
+        # except NIMCRecord.DoesNotExist:
+        #     return Response({"error": "NIN not found in the National Identity Database. Contact INEC ICT support."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create the electoral official account
         user = ElectoralUser.objects.create_user(

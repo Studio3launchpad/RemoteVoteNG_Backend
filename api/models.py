@@ -64,7 +64,6 @@ class ElectoralUser(AbstractUser):
     ROLE_CHOICES = [
         ('prospective', 'Prospective Voter'),
         ('voter', 'Registered Voter'),
-        # --- INEC HQ Roles ---
         ('commissioner', 'INEC Electoral Commissioner'),
         ('secretary', 'INEC Secretary'),
         # --- Field Roles ---
@@ -81,18 +80,14 @@ class ElectoralUser(AbstractUser):
 
     username = models.CharField(max_length=11, unique=True, verbose_name="NIN")
     staff_number = models.CharField(max_length=50, unique=True, blank=True, null=True, verbose_name="Staff Number")
-    vnin = models.CharField(max_length=16, blank=True, null=True, verbose_name="Virtual NIN")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='prospective')
     
     # Demographics & Placement
-    full_name = models.CharField(max_length=150)
-    state = models.CharField(max_length=100)
-    lga = models.CharField(max_length=100, verbose_name="LGA")
     assigned_polling_unit = models.ForeignKey(PollingUnit, on_delete=models.SET_NULL, null=True, blank=True)
     
     # Security & Authentication State
-    is_verified = models.BooleanField(default=False)
-    passed_bimodal_auth = models.BooleanField(default=False, help_text="Facial/Fingerprint verified at BVAS")
+    is_verified = models.BooleanField(default=True)
+    passed_bimodal_auth = models.BooleanField(default=True, help_text="Facial/Fingerprint verified at BVAS")
 
     voter_id = models.CharField(max_length=19, unique=True, blank=True, 
         null=True, verbose_name="Voter Identification Number (VIN)")
@@ -107,10 +102,10 @@ class ElectoralUser(AbstractUser):
     email = models.EmailField(unique=True)
 
     USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = ['email', 'full_name', 'state', 'lga']
+    REQUIRED_FIELDS = ['email' ]
 
     def __str__(self):
-        return f"{self.full_name} ({self.get_role_display()})"
+        return f"({self.get_role_display()})"
 
     def save(self, *args, **kwargs):
         if self.role not in ['prospective', 'voter'] and (not self.staff_number or self.staff_number.strip() == ""):

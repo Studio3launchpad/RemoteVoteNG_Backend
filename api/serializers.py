@@ -53,20 +53,16 @@ class ElectoralUserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     nin = serializers.CharField(max_length=11, min_length=11, write_only=True)
     password = serializers.CharField(write_only=True, min_length=6)
-    confirm_password = serializers.CharField(write_only=True, min_length=6)
-    date_of_birth = serializers.DateField(write_only=True)
 
     class Meta:
         model = ElectoralUser
-        fields = ['nin', 'email', 'password', 'confirm_password', 'date_of_birth']
+        fields = ['nin', 'password']
 
     def validate_nin(self, value):
         if not value.isdigit() or len(value) != 11:
             raise serializers.ValidationError("NIN must be exactly 11 digits.")
         if ElectoralUser.objects.filter(username=value).exists():
             raise serializers.ValidationError("A voter with this NIN is already registered.")
-        if not NIMCRecord.objects.filter(nin=value).exists():
-            raise serializers.ValidationError("NIN is invalid or not registered in the National Identity Database.")
         return value
 
     def validate_email(self, value):
@@ -74,32 +70,24 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A voter with this email is already registered.")
         return value
 
-    def validate_date_of_birth(self, value):
-        today = date.today()
-        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
-        if age < 18:
-            raise serializers.ValidationError("You must be at least 18 years old to register as a voter.")
-        return value
-
-    def validate(self, data):
-        if data['password'] != data['confirm_password']:
-            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
-        return data
+    # def validate_date_of_birth(self, value):
+    #     today = date.today()
+    #     age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+    #     if age < 18:
+    #         raise serializers.ValidationError("You must be at least 18 years old to register as a voter.")
+    #     return value
+    #
+    # def validate(self, data):
+    #     if data['password'] != data['confirm_password']:
+    #         raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+    #     return data
 
     def create(self, validated_data):
-        validated_data.pop('confirm_password')
         nin = validated_data['nin']
-        email = validated_data['email']
         password = validated_data['password']
-        date_of_birth = validated_data.pop('date_of_birth')
-        nimc = NIMCRecord.objects.get(nin=nin)
         user = ElectoralUser.objects.create_user(
             username=nin,
-            email=email,
             password=password,
-            full_name=nimc.full_name,
-            state=nimc.state,
-            lga=nimc.lga,
             role='voter',
             is_verified=False
         )

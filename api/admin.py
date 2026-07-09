@@ -24,9 +24,9 @@ admin.site.index_title = "Control Panel & Audit Dashboard"
 
 @admin.register(ElectoralUser)
 class ElectoralUserAdmin(admin.ModelAdmin):
-    list_display = ['username', 'staff_number', 'full_name', 'email', 'role', 'is_verified', 'is_staff']
-    list_filter = ['role', 'is_verified', 'is_staff', 'state']
-    search_fields = ['username', 'staff_number', 'full_name', 'email']
+    list_display = ['username', 'staff_number', 'role', 'is_verified', 'is_staff']
+    list_filter = ['role', 'is_verified', 'is_staff']
+    search_fields = ['username', 'staff_number', 'email']
     ordering = ['role', 'username']
 
 

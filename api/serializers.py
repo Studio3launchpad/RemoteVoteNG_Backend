@@ -2,7 +2,8 @@ from rest_framework import serializers
 from .models import (
     NIMCRecord, ElectoralUser, OTPVerification, Election, 
     Candidate, ElectionParticipation, ResultSheet, DisputeLog, AuditLog,
-    StaffInvitation, AccreditationApplication, ElectionClosureApproval, PollingUnit
+    StaffInvitation, AccreditationApplication, ElectionClosureApproval, PollingUnit,
+    VoterRegistrationRecord
 )
 from datetime import date
 import uuid
@@ -20,6 +21,17 @@ class NIMCRecordSerializer(serializers.ModelSerializer):
         if 'biometric_hash' not in validated_data or not validated_data['biometric_hash']:
             validated_data['biometric_hash'] = 'mock_biometric_hash_xyz_123'
         return super().create(validated_data)
+
+
+class VoterRegistrationRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VoterRegistrationRecord
+        fields = [
+            'id', 'vrn', 'nin', 'full_name', 'date_of_birth',
+            'gender', 'state', 'lga', 'ward', 'polling_unit_code',
+            'is_claimed', 'claimed_at'
+        ]
+        read_only_fields = ['is_claimed', 'claimed_at']
 
 
 class PollingUnitSerializer(serializers.ModelSerializer):
@@ -42,8 +54,8 @@ class ElectoralUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = ElectoralUser
         fields = [
-            'username', 'staff_id', 'full_name', 'email', 
-            'state', 'lga', 'role', 'is_verified', 'language'
+            'username', 'staff_number', 'full_name', 'email', 
+            'state', 'lga', 'role', 'is_verified', 'language', 'voter_id'
         ]
         extra_kwargs = {
             'username': {'read_only': True}
@@ -52,63 +64,81 @@ class ElectoralUserSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     nin = serializers.CharField(max_length=11, min_length=11, write_only=True)
+    vrn = serializers.CharField(max_length=20, write_only=True)
     password = serializers.CharField(write_only=True, min_length=6)
-    confirm_password = serializers.CharField(write_only=True, min_length=6)
-    date_of_birth = serializers.DateField(write_only=True)
 
     class Meta:
         model = ElectoralUser
-        fields = ['nin', 'email', 'password', 'confirm_password', 'date_of_birth']
+        fields = ['nin', 'vrn', 'password']
 
     def validate_nin(self, value):
         if not value.isdigit() or len(value) != 11:
             raise serializers.ValidationError("NIN must be exactly 11 digits.")
         if ElectoralUser.objects.filter(username=value).exists():
             raise serializers.ValidationError("A voter with this NIN is already registered.")
-        if not NIMCRecord.objects.filter(nin=value).exists():
-            raise serializers.ValidationError("NIN is invalid or not registered in the National Identity Database.")
-        return value
-
-    def validate_email(self, value):
-        if ElectoralUser.objects.filter(email=value).exists():
-            raise serializers.ValidationError("A voter with this email is already registered.")
-        return value
-
-    def validate_date_of_birth(self, value):
-        today = date.today()
-        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
-        if age < 18:
-            raise serializers.ValidationError("You must be at least 18 years old to register as a voter.")
         return value
 
     def validate(self, data):
-        if data['password'] != data['confirm_password']:
-            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        nin = data.get('nin')
+        vrn = data.get('vrn')
+
+        # Cross-validate VRN + NIN against the voter register
+        try:
+            record = VoterRegistrationRecord.objects.get(vrn=vrn)
+        except VoterRegistrationRecord.DoesNotExist:
+            raise serializers.ValidationError({
+                "vrn": "Voter Registration Number (VRN) not found in the INEC voter register."
+            })
+
+        if record.nin != nin:
+            raise serializers.ValidationError({
+                "vrn": "The VRN provided does not match your NIN in the INEC voter register."
+            })
+
+        if record.is_claimed:
+            raise serializers.ValidationError({
+                "vrn": "This VRN has already been used to create an account. Contact INEC if this is an error."
+            })
+
+        # Attach record to context for use in create()
+        self._vrn_record = record
         return data
 
     def create(self, validated_data):
-        validated_data.pop('confirm_password')
         nin = validated_data['nin']
-        email = validated_data['email']
         password = validated_data['password']
-        date_of_birth = validated_data.pop('date_of_birth')
-        nimc = NIMCRecord.objects.get(nin=nin)
-        user = ElectoralUser.objects.create_user(
+        vrn_record = self._vrn_record
+
+        # Bypass create_user to prevent it from normalizing email=None to ""
+        # and saving it immediately (which triggers the unique constraint).
+        user = ElectoralUser(
             username=nin,
-            email=email,
-            password=password,
-            full_name=nimc.full_name,
-            state=nimc.state,
-            lga=nimc.lga,
+            email=None,
             role='voter',
-            is_verified=False
+            is_verified=True,   # Auto-verify voters (no email/OTP)
+            full_name=vrn_record.full_name,
+            state=vrn_record.state,
+            lga=vrn_record.lga,
+            date_of_birth=vrn_record.date_of_birth,
         )
+        user.set_password(password)
+        user.save()
+
+        # Mark the VRN record as claimed
+        from django.utils import timezone
+        vrn_record.is_claimed = True
+        vrn_record.claimed_at = timezone.now()
+        vrn_record.save(update_fields=['is_claimed', 'claimed_at'])
+
         return user
+
+    #     if data['password'] != data['confirm_password']:
+
 
 class CandidateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Candidate
-        fields = ['id', 'name', 'party', 'party_abbr', 'color', 'manifesto', 'running_mate', 'votes_count']
+        fields = ['id', 'name', 'party', 'party_abbr', 'party_logo', 'color', 'manifesto', 'running_mate', 'votes_count']
 
 
 class ElectionSerializer(serializers.ModelSerializer):
@@ -281,7 +311,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     def get_username(self, obj):
         if obj.user:
-            return obj.user.staff_id if obj.user.staff_id else obj.user.username
+            return obj.user.staff_number if obj.user.staff_number else obj.user.username
         return "System"
 
 
@@ -293,7 +323,7 @@ class StaffInvitationSerializer(serializers.ModelSerializer):
     class Meta:
         model = StaffInvitation
         fields = [
-            'id', 'token', 'invited_email', 'staff_id', 'role',
+            'id', 'token', 'invited_email', 'staff_number', 'role',
             'assigned_polling_unit', 'polling_unit_name', 'invited_by',
             'invited_by_name', 'is_used', 'is_valid', 'created_at', 'expires_at'
         ]
@@ -313,7 +343,7 @@ class AccreditationApplicationSerializer(serializers.ModelSerializer):
 
 class ElectionClosureApprovalSerializer(serializers.ModelSerializer):
     approved_by_name = serializers.CharField(source='approved_by.full_name', read_only=True)
-    approved_by_staff = serializers.CharField(source='approved_by.staff_id', read_only=True)
+    approved_by_staff = serializers.CharField(source='approved_by.staff_number', read_only=True)
 
     class Meta:
         model = ElectionClosureApproval

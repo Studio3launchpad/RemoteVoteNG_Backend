@@ -11,21 +11,21 @@ from .utils import generate_voter_id
 from .models import (
     NIMCRecord, ElectoralUser, OTPVerification, Election, 
     Candidate, ElectionParticipation, ResultSheet, DisputeLog, AuditLog, PollingUnit,
-    StaffInvitation, AccreditationApplication, ElectionClosureApproval
+    StaffInvitation, AccreditationApplication, ElectionClosureApproval, VoterRegistrationRecord
 )
 from .serializers import (
     RegisterSerializer, ElectoralUserSerializer, ElectionSerializer, 
     CandidateSerializer, ResultSheetSerializer, DisputeLogSerializer, AuditLogSerializer,
     StaffInvitationSerializer, AccreditationApplicationSerializer, ElectionClosureApprovalSerializer,
     ElectionCreateSerializer, ElectionUpdateSerializer, CandidateCreateSerializer, PollingUnitSerializer,
-    NIMCRecordSerializer
+    NIMCRecordSerializer, VoterRegistrationRecordSerializer
 )
 from .brevo import send_otp_email
 import random
 import secrets
 
 
-from .utils import generate_voter_id  # create a utils.py file
+from .utils import generate_voter_id
 
 class RegisterView(views.APIView):
     permission_classes = [permissions.AllowAny]
@@ -34,40 +34,88 @@ class RegisterView(views.APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             try:
-                # Verify NIN against NIMCRecord first
-                nin = request.data.get('nin') or request.data.get('username')
-                try:
-                    NIMCRecord.objects.get(nin=nin)
-                except NIMCRecord.DoesNotExist:
-                    return Response(
-                        {"error": "NIN not found in NIMC database. Please check your NIN and try again."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                # Create user
+                # Serializer validates VRN + NIN cross-match and creates the user
                 user = serializer.save()
 
-                # Generate and save Voter ID
+                # Generate and save Voter ID (VIN) for the newly registered voter
                 vin = generate_voter_id(user.state)
                 user.voter_id = vin
-                user.save()
+                user.save(update_fields=['voter_id'])
 
-                # Send OTP
-                otp = OTPVerification.generate_otp(user, 'signup')
-                email_sent = send_otp_email(user, otp.code, 'signup')
-
+                # No email collected — account is already verified, return token immediately
+                token, _ = Token.objects.get_or_create(user=user)
                 return Response({
-                    "message": "Registration successful. Check your email for your Voter ID and OTP.",
+                    "message": "Registration successful. Your Voter ID (VIN) has been generated. Keep it safe — it is your login credential.",
                     "voter_id": vin,
-                    "email": user.email,
                     "full_name": user.full_name,
-                    "email_sent": email_sent,
-                    "otp_code_preview": otp.code if settings.BREVO_API_KEY in [None, 'mock', ''] else None
+                    "state": user.state,
+                    "lga": user.lga,
+                    "requires_otp": False,
+                    "token": token.key,
+                    "voter": ElectoralUserSerializer(user).data,
                 }, status=status.HTTP_201_CREATED)
 
             except Exception as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class VoterRegisterLookupView(views.APIView):
+    """
+    Pre-signup lookup — allows the frontend to verify that a VRN + NIN
+    pair exists in the voter register before the user fills out the full form.
+    Returns the voter's name, state and LGA (no sensitive data) if found.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        nin = request.data.get('nin', '').strip()
+        vrn = request.data.get('vrn', '').strip().upper()
+
+        if not nin or not vrn:
+            return Response({"error": "Both NIN and VRN are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            record = VoterRegistrationRecord.objects.get(vrn=vrn)
+        except VoterRegistrationRecord.DoesNotExist:
+            return Response({"error": "VRN not found in the INEC voter register."}, status=status.HTTP_404_NOT_FOUND)
+
+        if record.nin != nin:
+            return Response({"error": "VRN and NIN do not match."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if record.is_claimed:
+            return Response({"error": "This VRN has already been used to create an account."}, status=status.HTTP_409_CONFLICT)
+
+        return Response({
+            "found": True,
+            "full_name": record.full_name,
+            "state": record.state,
+            "lga": record.lga,
+            "ward": record.ward,
+            "polling_unit_code": record.polling_unit_code,
+        }, status=status.HTTP_200_OK)
+
+
+class VoterRegistrationRecordListView(generics.ListAPIView):
+    """
+    Read-only list of voter registration records for secretary / commissioner review.
+    """
+    serializer_class = VoterRegistrationRecordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role not in ['secretary', 'commissioner', 'auditor']:
+            return VoterRegistrationRecord.objects.none()
+        qs = VoterRegistrationRecord.objects.all().order_by('-id')
+        state = self.request.query_params.get('state')
+        is_claimed = self.request.query_params.get('is_claimed')
+        if state:
+            qs = qs.filter(state=state)
+        if is_claimed is not None:
+            qs = qs.filter(is_claimed=is_claimed.lower() == 'true')
+        return qs
 
 class VerifyOTPView(views.APIView):
     permission_classes = [permissions.AllowAny]
@@ -136,7 +184,7 @@ class LoginView(views.APIView):
         elif staff_id:
             # Staff login with staff number
             try:
-                user_obj = ElectoralUser.objects.get(staff_id=staff_id)
+                user_obj = ElectoralUser.objects.get(staff_number=staff_id)
             except ElectoralUser.DoesNotExist:
                 return Response(
                     {"error": "Invalid Staff ID or password."},
@@ -144,9 +192,19 @@ class LoginView(views.APIView):
                 )
             user = authenticate(username=user_obj.username, password=password)
 
+        elif request.data.get('nin'):
+            # NIN direct login (fallback — works for staff whose username is their NIN)
+            nin = request.data.get('nin')
+            user = authenticate(username=nin, password=password)
+            if not user:
+                return Response(
+                    {"error": "Invalid NIN or password."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+
         else:
             return Response(
-                {"error": "Voter ID or Staff ID is required."},
+                {"error": "Voter ID, Staff ID, or NIN is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -408,7 +466,7 @@ class ApproveElectionClosureView(views.APIView):
             return Response({"error": "You have already submitted your closure approval for this election."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Generate digital signature
-        digital_sig = f"SIG-{request.user.staff_id}-{election.id}-{secrets.token_hex(8).upper()}"
+        digital_sig = f"SIG-{request.user.staff_number}-{election.id}-{secrets.token_hex(8).upper()}"
 
         # Record this RO's approval
         approval = ElectionClosureApproval.objects.create(
@@ -638,7 +696,7 @@ class ResendStaffInvitationView(views.APIView):
         send_staff_invitation_email(
             email=invitation.invited_email,
             role_display=invitation.get_role_display(),
-            staff_id=invitation.staff_id,
+            staff_id=invitation.staff_number,
             token=invitation.token
         )
         return Response({"message": f"Invitation email resent successfully to {invitation.invited_email}."}, status=status.HTTP_200_OK)
@@ -695,26 +753,29 @@ class SendStaffInvitationView(views.APIView):
                     if role not in valid_roles:
                         raise ValueError(f"Invalid role '{role}' at index {idx}. Must be one of: {', '.join(valid_roles)}")
 
-                    # Autogenerate staff number
-                    role_prefix = role.upper()
-                    staff_id = f"STAFF-{role_prefix}-{random.randint(100000, 999999)}"
-                    while ElectoralUser.objects.filter(staff_id=staff_id).exists() or StaffInvitation.objects.filter(staff_id=staff_id).exists():
-                        staff_id = f"STAFF-{role_prefix}-{random.randint(100000, 999999)}"
-
                     polling_unit = None
+                    state = request.user.state if request.user.role == 'commissioner' else 'Federal'
+                    
                     if polling_unit_id:
                         try:
                             polling_unit = PollingUnit.objects.get(id=polling_unit_id)
+                            state = polling_unit.state
                         except PollingUnit.DoesNotExist:
                             raise ValueError(f"Polling unit with ID '{polling_unit_id}' not found (Index {idx}).")
                         
                         if request.user.role == 'commissioner' and polling_unit.state != request.user.state:
                             raise ValueError(f"You can only invite staff to polling units in your assigned state ({request.user.state}). Found index {idx} state '{polling_unit.state}'.")
                     
+                    # Autogenerate staff number
+                    from .utils import generate_staff_id
+                    staff_id = generate_staff_id(role, state)
+                    while ElectoralUser.objects.filter(staff_number=staff_id).exists() or StaffInvitation.objects.filter(staff_number=staff_id).exists():
+                        staff_id = generate_staff_id(role, state)
+
                     invitation = StaffInvitation.create_invitation(
                         email=email,
                         role=role,
-                        staff_id=staff_id,
+                        staff_number=staff_id,
                         invited_by=request.user,
                         polling_unit=polling_unit
                     )
@@ -725,7 +786,7 @@ class SendStaffInvitationView(views.APIView):
                         send_staff_invitation_email(
                             email=invitation.invited_email,
                             role_display=invitation.get_role_display(),
-                            staff_id=invitation.staff_id,
+                            staff_id=invitation.staff_number,
                             token=invitation.token
                         )
                     except Exception as e:
@@ -737,7 +798,7 @@ class SendStaffInvitationView(views.APIView):
                     results.append({
                         "email": invitation.invited_email,
                         "role": invitation.role,
-                        "staff_id": invitation.staff_id,
+                        "staff_id": invitation.staff_number,
                         "invitation_token": invitation.token,
                         "activation_link": activation_link,
                         "expires_at": invitation.expires_at
@@ -796,7 +857,7 @@ class AcceptStaffInvitationView(views.APIView):
             return Response({"error": "This invitation link has expired or has already been used."}, status=status.HTTP_410_GONE)
         return Response({
             "email": invitation.invited_email,
-            "staff_id": invitation.staff_id,
+            "staff_id": invitation.staff_number,
             "role": invitation.role,
             "role_display": invitation.get_role_display(),
             "expires_at": invitation.expires_at
@@ -804,43 +865,34 @@ class AcceptStaffInvitationView(views.APIView):
 
     def post(self, request, token):
         """
-        Complete account activation: verify NIN from NIMC, set password, create staff account.
+        Complete account activation: set password, create staff account.
         """
         invitation = get_object_or_404(StaffInvitation, token=token)
         if not invitation.is_valid:
             return Response({"error": "This invitation link has expired or has already been used."}, status=status.HTTP_410_GONE)
 
-        nin = request.data.get('nin')
+        full_name = request.data.get('full_name')
         password = request.data.get('password')
 
-        if not nin or not password:
-            return Response({"error": "NIN and password are required to activate your account."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not nin.isdigit() or len(nin) != 11:
-            return Response({"error": "Invalid NIN format."}, status=status.HTTP_400_BAD_REQUEST)
+        if not full_name or not password:
+            return Response({"error": "Full name and password are required to activate your account."}, status=status.HTTP_400_BAD_REQUEST)
 
         if len(password) < 6:
             return Response({"error": "Password must be at least 6 characters."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if ElectoralUser.objects.filter(username=nin).exists():
-            return Response({"error": "An account with this NIN already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        if ElectoralUser.objects.filter(email=invitation.invited_email).exists():
+            return Response({"error": f"An account with the email {invitation.invited_email} already exists. Please use a different email or contact support."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Verify NIN against NIMC
-        try:
-            nimc = NIMCRecord.objects.get(nin=nin)
-        except NIMCRecord.DoesNotExist:
-            return Response({"error": "NIN not found in the National Identity Database. Contact INEC ICT support."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Create the electoral official account
+        # Create the electoral official account using the generated staff_number as username
         user = ElectoralUser.objects.create_user(
-            username=nin,
+            username=invitation.staff_number,
             email=invitation.invited_email,
             password=password,
-            full_name=nimc.full_name,
-            state=nimc.state,
-            lga=nimc.lga,
+            full_name=full_name,
+            state=invitation.assigned_polling_unit.state if invitation.assigned_polling_unit else 'Federal',
+            lga=invitation.assigned_polling_unit.lga if invitation.assigned_polling_unit else '',
             role=invitation.role,
-            staff_id=invitation.staff_id,
+            staff_number=invitation.staff_number,
             assigned_polling_unit=invitation.assigned_polling_unit,
             is_verified=True,
             is_staff=True
@@ -978,7 +1030,7 @@ class ReviewAccreditationView(views.APIView):
                 return Response({
                     "message": f"Application APPROVED. Accreditation invitation sent to {app.contact_email}.",
                     "activation_link": activation_link,
-                    "staff_id": invitation.staff_id,
+                    "staff_id": invitation.staff_number,
                     "role": invitation.role
                 }, status=status.HTTP_200_OK)
             except StaffInvitation.DoesNotExist:
@@ -1029,7 +1081,7 @@ class ElectionCreateView(views.APIView):
         if serializer.is_valid():
             election = serializer.save()
             return Response({
-                "message": f"Election '{election.title}' created in DRAFT status. Add candidates then publish when ready.",
+                "message": f"Election '{election.title}' has been saved securely. It is currently hidden from the public. Please add your candidates next, and then 'Publish' the election to make it visible to voters.",
                 "election": ElectionSerializer(election, context={'request': request}).data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1124,7 +1176,6 @@ class ElectionStatusTransitionView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Guard: must have at least 1 candidate before going live
         if target in ['active', 'upcoming'] and election.candidates.count() == 0:
             return Response(
                 {"error": "Cannot publish an election with no registered candidates. Add candidates first."},

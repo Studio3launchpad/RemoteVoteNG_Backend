@@ -48,6 +48,10 @@ urlpatterns = [
     
     # INEC Secretary Metrics
     path('secretary/metrics/', views.SecretaryMetricsView.as_view(), name='secretary-metrics'),
+
+    # Voter Registration Records (VRN)
+    path('auth/vrn-lookup/', views.VoterRegisterLookupView.as_view(), name='vrn-lookup'),
+    path('voter-register/', views.VoterRegistrationRecordListView.as_view(), name='voter-register-list'),
 ]
 
 

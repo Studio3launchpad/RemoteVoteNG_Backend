@@ -1,10 +1,11 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 from django.contrib.admin.forms import AdminAuthenticationForm
 from django import forms
 from .models import (
     ElectoralUser, NIMCRecord, PollingUnit, OTPVerification, 
     Election, Candidate, ResultSheet, DisputeLog, ElectionParticipation, AuditLog,
-    StaffInvitation, AccreditationApplication, ElectionClosureApproval
+    StaffInvitation, AccreditationApplication, ElectionClosureApproval, VoterRegistrationRecord
 )
 
 # Custom Admin Login Form to use Staff ID label
@@ -26,61 +27,74 @@ admin.site.index_title = "Control Panel & Audit Dashboard"
 class ElectoralUserAdmin(admin.ModelAdmin):
     list_display = ['username', 'staff_number', 'full_name', 'email', 'role', 'is_verified', 'is_staff']
     list_filter = ['role', 'is_verified', 'is_staff', 'state']
-    search_fields = ['username', 'staff_id', 'full_name', 'email']
+    search_fields = ['username', 'staff_number', 'full_name', 'email']
     ordering = ['role', 'username']
 
 
 @admin.register(NIMCRecord)
-class NIMCRecordAdmin(admin.ModelAdmin):
+class NIMCRecordAdmin(ModelAdmin):
     list_display = ['nin', 'full_name', 'state', 'lga']
     list_filter = ['state']
     search_fields = ['nin', 'full_name']
 
 
+@admin.register(VoterRegistrationRecord)
+class VoterRegistrationRecordAdmin(ModelAdmin):
+    list_display = ['vrn', 'full_name', 'nin', 'state', 'lga', 'ward', 'gender', 'is_claimed', 'claimed_at']
+    list_filter = ['state', 'gender', 'is_claimed']
+    search_fields = ['vrn', 'nin', 'full_name']
+    readonly_fields = ['is_claimed', 'claimed_at']
+    ordering = ['state', 'lga']
+
+    def has_change_permission(self, request, obj=None):
+        # Only superusers can modify the voter register
+        return request.user.is_superuser
+
+
 @admin.register(PollingUnit)
-class PollingUnitAdmin(admin.ModelAdmin):
+class PollingUnitAdmin(ModelAdmin):
     list_display = ['id', 'name', 'ward', 'lga', 'state', 'registered_voters_count']
     list_filter = ['state', 'lga']
     search_fields = ['id', 'name', 'ward']
 
 
 @admin.register(Election)
-class ElectionAdmin(admin.ModelAdmin):
+class ElectionAdmin(ModelAdmin):
     list_display = ['id', 'title', 'date', 'status', 'blockchain_contract_address']
     list_filter = ['status', 'date']
     search_fields = ['id', 'title']
 
 
 @admin.register(Candidate)
-class CandidateAdmin(admin.ModelAdmin):
+class CandidateAdmin(ModelAdmin):
     list_display = ['id', 'name', 'party_abbr', 'election', 'votes_count']
     list_filter = ['election', 'party_abbr']
     search_fields = ['id', 'name', 'party']
 
 
 @admin.register(ResultSheet)
-class ResultSheetAdmin(admin.ModelAdmin):
+class ResultSheetAdmin(ModelAdmin):
     list_display = ['id', 'election', 'polling_unit', 'presiding_officer', 'total_votes_cast', 'flagged_for_overvoting', 'timestamp']
     list_filter = ['election', 'flagged_for_overvoting', 'timestamp']
     search_fields = ['polling_unit__name', 'presiding_officer__full_name']
 
 
 @admin.register(DisputeLog)
-class DisputeLogAdmin(admin.ModelAdmin):
+class DisputeLogAdmin(ModelAdmin):
     list_display = ['id', 'polling_unit', 'raised_by', 'is_resolved', 'timestamp']
     list_filter = ['is_resolved', 'timestamp']
     search_fields = ['polling_unit__name', 'description']
 
 
 @admin.register(ElectionParticipation)
-class ElectionParticipationAdmin(admin.ModelAdmin):
+class ElectionParticipationAdmin(ModelAdmin):
     list_display = ['voter', 'election', 'voted_at', 'cryptographic_receipt']
     list_filter = ['election', 'voted_at']
     search_fields = ['voter__username', 'cryptographic_receipt']
 
 
 @admin.register(AuditLog)
-class AuditLogAdmin(admin.ModelAdmin):
+class AuditLogAdmin(ModelAdmin):
     """
     Read-only Audit Log list to prevent administrative editing of logs.
     """
@@ -100,7 +114,7 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 @admin.register(StaffInvitation)
 class StaffInvitationAdmin(admin.ModelAdmin):
-    list_display = ['staff_id', 'invited_email', 'role', 'invited_by', 'is_used', 'created_at', 'expires_at']
+    list_display = ['staff_number', 'invited_email', 'role', 'invited_by', 'is_used', 'created_at', 'expires_at']
     list_filter = ['role', 'is_used', 'created_at']
     search_fields = ['staff_id', 'invited_email', 'token']
     readonly_fields = ['token', 'created_at']
@@ -111,7 +125,7 @@ class StaffInvitationAdmin(admin.ModelAdmin):
 
 
 @admin.register(AccreditationApplication)
-class AccreditationApplicationAdmin(admin.ModelAdmin):
+class AccreditationApplicationAdmin(ModelAdmin):
     list_display = ['organization_name', 'applicant_type', 'contact_name', 'contact_email', 'status', 'created_at']
     list_filter = ['applicant_type', 'status', 'created_at']
     search_fields = ['organization_name', 'contact_name', 'contact_email', 'organization_id']
@@ -119,7 +133,7 @@ class AccreditationApplicationAdmin(admin.ModelAdmin):
 
 
 @admin.register(ElectionClosureApproval)
-class ElectionClosureApprovalAdmin(admin.ModelAdmin):
+class ElectionClosureApprovalAdmin(ModelAdmin):
     list_display = ['election', 'approved_by', 'approved_at', 'digital_signature']
     list_filter = ['election', 'approved_at']
     search_fields = ['approved_by__full_name', 'approved_by__staffid', 'digital_signature']

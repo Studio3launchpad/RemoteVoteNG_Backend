@@ -100,7 +100,7 @@ class AuditLogAdmin(ModelAdmin):
     """
     list_display = ['user', 'action', 'model_name', 'object_id', 'timestamp', 'ip_address']
     list_filter = ['action', 'model_name', 'timestamp']
-    search_fields = ['user__username', 'user__staffid', 'model_name', 'object_id', 'details']
+    search_fields = ['user__username', 'user__staff_number', 'model_name', 'object_id', 'details']
     
     def has_add_permission(self, request):
         return False
@@ -116,7 +116,7 @@ class AuditLogAdmin(ModelAdmin):
 class StaffInvitationAdmin(admin.ModelAdmin):
     list_display = ['staff_number', 'invited_email', 'role', 'invited_by', 'is_used', 'created_at', 'expires_at']
     list_filter = ['role', 'is_used', 'created_at']
-    search_fields = ['staff_id', 'invited_email', 'token']
+    search_fields = ['staff_number', 'invited_email', 'token']
     readonly_fields = ['token', 'created_at']
 
     def has_change_permission(self, request, obj=None):
@@ -136,7 +136,7 @@ class AccreditationApplicationAdmin(ModelAdmin):
 class ElectionClosureApprovalAdmin(ModelAdmin):
     list_display = ['election', 'approved_by', 'approved_at', 'digital_signature']
     list_filter = ['election', 'approved_at']
-    search_fields = ['approved_by__full_name', 'approved_by__staffid', 'digital_signature']
+    search_fields = ['approved_by__full_name', 'approved_by__staff_number', 'digital_signature']
     readonly_fields = ['approved_at', 'digital_signature']
 
     def has_add_permission(self, request):

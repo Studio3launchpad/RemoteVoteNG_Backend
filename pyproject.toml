@@ -15,4 +15,5 @@ dependencies = [
     "django-unfold>=0.43.0",
     "cloudinary>=1.41.0",
     "django-cloudinary-storage>=0.3.0",
+    "pillow>=12.3.0",
 ]

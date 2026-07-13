@@ -67,7 +67,7 @@ class Migration(migrations.Migration):
                 ('is_active', models.BooleanField(default=True, help_text='Designates whether this user should be treated as active. Unselect this instead of deleting accounts.', verbose_name='active')),
                 ('date_joined', models.DateTimeField(default=django.utils.timezone.now, verbose_name='date joined')),
                 ('username', models.CharField(max_length=11, unique=True, verbose_name='NIN')),
-                ('staff_number', models.CharField(blank=True, max_length=50, null=True, unique=True, verbose_name='Staff Number')),
+                ('staff_number', models.CharField(blank=True, max_length=50, null=True, unique=True, verbose_name='Staff ID')),
                 ('vnin', models.CharField(blank=True, max_length=16, null=True, verbose_name='Virtual NIN')),
                 ('role', models.CharField(choices=[('prospective', 'Prospective Voter'), ('voter', 'Registered Voter'), ('po', 'Presiding Officer (PO)'), ('apo', 'Assistant Presiding Officer (APO)'), ('spo', 'Supervisory Presiding Officer (SPO)'), ('co', 'Collation Officer (CO)'), ('ro', 'Returning Officer (RO)'), ('agent', 'Polling / Party Agent'), ('media', 'Accredited Media / Journalist'), ('observer', 'Election Observer'), ('auditor', 'Cybersecurity Auditor')], default='prospective', max_length=20)),
                 ('full_name', models.CharField(max_length=150)),

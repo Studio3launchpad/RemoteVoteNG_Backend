@@ -7,7 +7,7 @@ def provision_secretary(apps, schema_editor):
     
     # Retrieve configuration settings
     nin = getattr(settings, 'SECRETARY_NIN', '99999999999')
-    staff_number = getattr(settings, 'SECRETARY_STAFF_NUMBER', 'STAFF-SECRETARY-2026')
+    staff_number = getattr(settings, 'SECRETARY_STAFFID', 'STAFF-SECRETARY-2026')
     password = getattr(settings, 'SECRETARY_DEFAULT_PASSWORD', 'SecPass2026!')
     email = getattr(settings, 'SECRETARY_EMAIL', 'secretary@remotevoteng.org')
     full_name = getattr(settings, 'SECRETARY_NAME', 'INEC Secretary HQ')

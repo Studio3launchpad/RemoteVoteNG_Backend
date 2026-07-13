@@ -250,12 +250,14 @@ class CandidateCreateSerializer(serializers.Serializer):
         return value.upper().strip()
 
     def create(self, validated_data):
+        import secrets
         election = self.context['election']
-        # Generate ID: election-id + party abbr slug
-        abbr = re.sub(r'[^a-z0-9]+', '', validated_data['party_abbr'].lower())
-        candidate_id = f"{election.id}-{abbr}"
-        if Candidate.objects.filter(id=candidate_id).exists():
-            candidate_id = f"{candidate_id}-{uuid.uuid4().hex[:4]}"
+        
+        # Generate a highly secure, unpredictable, but short candidate ID
+        # Format: CAN-[8 random hex characters] -> e.g. CAN-A1B2C3D4
+        candidate_id = f"CAN-{secrets.token_hex(4).upper()}"
+        while Candidate.objects.filter(id=candidate_id).exists():
+            candidate_id = f"CAN-{secrets.token_hex(4).upper()}"
 
         return Candidate.objects.create(
             id=candidate_id,

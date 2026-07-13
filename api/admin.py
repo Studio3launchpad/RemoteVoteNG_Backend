@@ -8,11 +8,11 @@ from .models import (
     StaffInvitation, AccreditationApplication, ElectionClosureApproval, VoterRegistrationRecord
 )
 
-# Custom Admin Login Form to use Staff Number label
+# Custom Admin Login Form to use Staff ID label
 class StaffAdminAuthenticationForm(AdminAuthenticationForm):
     username = forms.CharField(
-        label="Staff Number / NIN", 
-        help_text="Login using your Staff Number (for election officials) or NIN.",
+        label="Staff ID / NIN", 
+        help_text="Login using your Staff ID (for election officials) or NIN.",
         widget=forms.TextInput(attrs={'autofocus': True, 'placeholder': 'e.g., STAFF-PO or 11111111111'})
     )
 
@@ -24,10 +24,10 @@ admin.site.index_title = "Control Panel & Audit Dashboard"
 
 
 @admin.register(ElectoralUser)
-class ElectoralUserAdmin(ModelAdmin):
-    list_display = ['username', 'staff_number', 'role', 'is_verified', 'is_staff']
-    list_filter = ['role', 'is_verified', 'is_staff']
-    search_fields = ['username', 'staff_number', 'email']
+class ElectoralUserAdmin(admin.ModelAdmin):
+    list_display = ['username', 'staff_number', 'full_name', 'email', 'role', 'is_verified', 'is_staff']
+    list_filter = ['role', 'is_verified', 'is_staff', 'state']
+    search_fields = ['username', 'staff_number', 'full_name', 'email']
     ordering = ['role', 'username']
 
 
@@ -113,7 +113,7 @@ class AuditLogAdmin(ModelAdmin):
 
 
 @admin.register(StaffInvitation)
-class StaffInvitationAdmin(ModelAdmin):
+class StaffInvitationAdmin(admin.ModelAdmin):
     list_display = ['staff_number', 'invited_email', 'role', 'invited_by', 'is_used', 'created_at', 'expires_at']
     list_filter = ['role', 'is_used', 'created_at']
     search_fields = ['staff_number', 'invited_email', 'token']

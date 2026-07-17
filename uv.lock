@@ -160,15 +160,15 @@ wheels = [
 ]
 
 [[package]]
-name = "django-unfold"
-version = "0.90.0"
+name = "django-jazzmin"
+version = "3.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/52/e3/86c7d882260549cb9c9310bc6f343988816aab66d56b22e031cd04d426d8/django_unfold-0.90.0.tar.gz", hash = "sha256:e1627e8a0c8d16311b6e43736eaed449204a2f6cb6c323b63e583a07517f4fcd", size = 1120050, upload-time = "2026-04-16T13:03:10.177Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/15/e4/17cd62e80c4876088bc5f8bca24446586a62eca386c82755894408751a44/django_jazzmin-3.0.5.tar.gz", hash = "sha256:7e39b029bddbb60f3aaf9897bd009f39f8f2bdc8a7d86beed1e943706dd79692", size = 2509734, upload-time = "2026-06-25T21:05:52.699Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/96/5291b8da29254409d9658044837b0a21a5424103534bb472027562c36a73/django_unfold-0.90.0-py3-none-any.whl", hash = "sha256:f921804427a705cfaadca941a8ab32da033735acfb4c43de27f39db5a7467001", size = 1242469, upload-time = "2026-04-16T13:03:08.312Z" },
+    { url = "https://files.pythonhosted.org/packages/23/40/892f4c922c92d0d2b8ca5f96f556c5dc04d19ea2ea717910d8bbf2dc23fc/django_jazzmin-3.0.5-py3-none-any.whl", hash = "sha256:578fb1fc0a1b7e3b8472d2692ace60b1584ccd937c3828e2c9a89bdf94067f94", size = 2581722, upload-time = "2026-06-25T21:05:50.948Z" },
 ]
 
 [[package]]
@@ -323,7 +323,7 @@ dependencies = [
     { name = "django" },
     { name = "django-cloudinary-storage" },
     { name = "django-cors-headers" },
-    { name = "django-unfold" },
+    { name = "django-jazzmin" },
     { name = "djangorestframework" },
     { name = "pillow" },
     { name = "psycopg2-binary" },
@@ -339,7 +339,7 @@ requires-dist = [
     { name = "django", specifier = ">=4.2,<5.1" },
     { name = "django-cloudinary-storage", specifier = ">=0.3.0" },
     { name = "django-cors-headers", specifier = ">=4.0" },
-    { name = "django-unfold", specifier = ">=0.43.0" },
+    { name = "django-jazzmin", specifier = ">=3.0.0" },
     { name = "djangorestframework", specifier = ">=3.14" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.9" },

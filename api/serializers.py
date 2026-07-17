@@ -221,6 +221,13 @@ class ElectionUpdateSerializer(serializers.ModelSerializer):
     Allows Commissioners to edit draft/upcoming elections.
     Active and closed elections are locked from editing.
     """
+    eligible_states = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=False,
+        default=list,
+        allow_empty=True
+    )
+
     class Meta:
         model = Election
         fields = ['title', 'election_type', 'description', 'date', 'eligible_states']

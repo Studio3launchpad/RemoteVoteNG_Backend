@@ -24,7 +24,7 @@ ALLOWED_HOSTS = ['*']
 # Application definition
 
 INSTALLED_APPS = [
-    'unfold',
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -139,7 +139,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 
@@ -205,12 +206,70 @@ STORAGES = {
         "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
+
+WHITENOISE_USE_FINDERS = True
 
 CLOUDINARY_STORAGE = {
     'CLOUD_NAME': os.getenv("CLOUDINARY_CLOUD_NAME", ""),
     'API_KEY': os.getenv("CLOUDINARY_API_KEY", ""),
     'API_SECRET': os.getenv("CLOUDINARY_API_SECRET", "")
+}
+
+JAZZMIN_SETTINGS = {
+    "site_title": "RemoteVote NG",
+    "site_header": "RemoteVote NG",
+    "site_brand": "INEC RemoteVote",
+    "site_logo": "img/logo.svg",
+    "login_logo": "img/logo.svg",
+    "welcome_sign": "Welcome to the INEC RemoteVote Admin Portal",
+    "copyright": "Independent National Electoral Commission (INEC)",
+    "search_model": ["api.ElectoralUser", "api.Election"],
+    "show_ui_builder": False,
+    "topmenu_links": [
+        {"name": "Dashboard",  "url": "admin:index", "permissions": ["auth.view_user"]},
+        {"name": "Electoral Guidelines", "url": "https://inecnigeria.org", "new_window": True},
+    ],
+    "icons": {
+        "api.ElectoralUser": "fas fa-users-cog",
+        "api.Election": "fas fa-person-booth",
+        "api.Candidate": "fas fa-user-tie",
+        "api.PollingUnit": "fas fa-map-marker-alt",
+        "api.ResultSheet": "fas fa-file-contract",
+        "api.DisputeLog": "fas fa-exclamation-triangle",
+        "api.AuditLog": "fas fa-shield-alt",
+        "api.VoterRegistrationRecord": "fas fa-id-card",
+        "api.NIMCRecord": "fas fa-fingerprint",
+        "api.StaffInvitation": "fas fa-envelope-open-text",
+        "api.AccreditationApplication": "fas fa-certificate",
+        "api.ElectionClosureApproval": "fas fa-lock",
+        "api.ElectionParticipation": "fas fa-vote-yea",
+    },
+    "default_icon_parents": "fas fa-folder",
+    "default_icon_children": "fas fa-circle",
+    "related_modal_active": True,
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar": "navbar-success navbar-dark",
+    "brand_colour": "navbar-success",
+    "theme": "lumen",
+    "sidebar": "sidebar-dark-success",
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": True,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": True,
+    "theme_color": "success",
+    "dark_mode_theme": "darkly",
+    "button_classes": {
+        "primary": "btn-success",
+        "secondary": "btn-outline-success",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success"
+    },
+    "actions_sticky_top": True
 }

@@ -239,6 +239,7 @@ class Election(models.Model):
     end_time = models.TimeField(default='14:30:00')
     eligible_states = models.JSONField(
         default=list,
+        blank=True,
         help_text="List of state names eligible to participate. Empty = nationwide."
     )
     created_by = models.ForeignKey(

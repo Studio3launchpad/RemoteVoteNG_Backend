@@ -417,14 +417,18 @@ class Command(BaseCommand):
         invite_senders = list(ElectoralUser.objects.filter(role__in=['secretary', 'commissioner']))
         if invite_senders:
             inv_bulk = []
+            from api.utils import generate_staff_id
             for i in range(20):
                 role = random.choice(['po', 'apo', 'spo', 'co', 'ro', 'auditor'])
+                assigned_pu = random.choice(all_pus) if role in ['po', 'apo', 'spo'] else None
+                state_for_id = assigned_pu.state if assigned_pu else 'Federal'
+                
                 inv_bulk.append(StaffInvitation(
                     token=secrets.token_urlsafe(32),
                     invited_email=f"staff.invite{i}.{random.randint(100,999)}@inec-candidate.gov.ng",
-                    staff_number=f"INV-{role.upper()}-{random.randint(100000, 999999)}",
+                    staff_number=generate_staff_id(role, state_for_id),
                     role=role,
-                    assigned_polling_unit=random.choice(all_pus) if role in ['po', 'apo', 'spo'] else None,
+                    assigned_polling_unit=assigned_pu,
                     invited_by=random.choice(invite_senders),
                     is_used=random.choice([True, False]),
                     expires_at=timezone.now() + timedelta(days=random.randint(-5, 30))

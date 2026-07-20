@@ -28,6 +28,7 @@ class ElectoralUserAdmin(admin.ModelAdmin):
     list_filter = ['role', 'is_verified', 'is_staff', 'state']
     search_fields = ['username', 'staff_number', 'full_name', 'email']
     ordering = ['role', 'username']
+    exclude = ('first_name', 'last_name')
 
 
 @admin.register(NIMCRecord)
@@ -59,9 +60,16 @@ class PollingUnitAdmin(admin.ModelAdmin):
 
 @admin.register(Election)
 class ElectionAdmin(admin.ModelAdmin):
-    list_display = ['id', 'title', 'date', 'status', 'blockchain_contract_address']
+    list_display = ['id', 'title', 'date', 'status', 'blockchain_contract_address', 'created_by']
     list_filter = ['status', 'date']
     search_fields = ['id', 'title']
+    exclude = ('created_by',)
+
+    def save_model(self, request, obj, form, change):
+        # Automatically assign the logged-in user as the creator if it's a new election
+        if getattr(obj, 'created_by', None) is None:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(Candidate)
